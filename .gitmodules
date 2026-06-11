@@ -1,0 +1,4 @@
+[submodule "libcachesim"]
+	path = libcachesim
+	url = git@github.com:ldos-project/libcachesim.git
+	branch = libvulcan-initial

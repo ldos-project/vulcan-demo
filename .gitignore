@@ -2,3 +2,5 @@
 **/__pycache__
 traces/
 *.json
+build/
+.venv/
