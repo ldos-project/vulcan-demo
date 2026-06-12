@@ -1,8 +1,11 @@
-# Instructions
+# Evolving the entire cache eviction heuristic: in Python
+
+## Instructions
 
 1. Create a `python3` virtual environment: `python3 -m venv .venv`. 
-2. `pip3 install libcachesim` and then try to run `test_evaluator.py`. 
-3. Download the traces used:
+2. Activate it: `source .venv/bin/activate`.
+3. `pip3 install libcachesim` and then try to run `test_python_evaluator.py`. 
+4. Download the traces used:
 
 ```bash
 mkdir traces && cd traces

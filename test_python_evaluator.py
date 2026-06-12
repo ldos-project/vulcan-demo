@@ -1,4 +1,4 @@
-from evaluator import score
+from python_evaluator import score
 
 with open("initial_program.py", "r") as f:
     LRU_CODE = f.read()
