@@ -24,7 +24,7 @@ LLMCODE_H = os.path.join(
 )
 
 TRAIN_TRACES = ["w106"]
-TEST_TRACES = ["w106", "w105", "w103"]
+TEST_TRACES = ["w105", "w87", "w86", "w93", "w89", "w103", "w94", "w90", "w106", "w99"]
 TRAIN_SIZES = [0.1]
 TEST_SIZES = [0.01, 0.03, 0.1]
 SIZE_LABELS = {0.01: "1pct", 0.03: "3pct", 0.1: "10pct"}
