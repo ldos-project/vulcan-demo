@@ -33,3 +33,14 @@ def sample_diverse_parents(population, embeddings, k=3):
 
 - Top-k creates an echo chamber — the LLM sees the same logic N times and produces minor tweaks
 - Diverse parents expose different algorithmic ideas (frequency-based, recency-based, size-aware, hybrid) in a single prompt
+
+## Calling the embedding model
+```
+curl -X POST https://workshop.dwivedula.dev/v1/embeddings \
+  -H "Authorization: Bearer sk-<<key-here>>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "cohere-embed",
+    "input": "Hello world"
+  }'
+```
