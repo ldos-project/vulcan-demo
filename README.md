@@ -3,7 +3,7 @@
 2. Install build deps (CMake, GLib, zstd): `./libcachesim/scripts/install_dependency.sh`
 3. Create and activate a venv: `python3 -m venv .venv && source .venv/bin/activate`
 4. Install Python deps: `pip3 install openai` (then set your API key in `llm.py`)
-5. Build the evaluator: `mkdir build && cd build && make -j`
+5. Build the evaluator: `mkdir build && cmake ../ && cd build && make -j`
 6. Download traces:
     ```bash
     mkdir traces && cd traces
