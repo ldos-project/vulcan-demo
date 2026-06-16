@@ -141,19 +141,19 @@
   <!-- Stats bar -->
   <div class="stats-bar">
     <div class="stat-card"><div class="val" id="stat-count">—</div><div class="lbl">Submissions</div></div>
-    <div class="stat-card"><div class="val" id="stat-best-mrr">—</div><div class="lbl">Best MRR vs FIFO</div></div>
+    <div class="stat-card"><div class="val" id="stat-best-mrr">—</div><div class="lbl">Best MRR over FIFO</div></div>
     <div class="stat-card"><div class="val" id="stat-best-byte">—</div><div class="lbl">Best Mean Byte HR</div></div>
     <div class="stat-card"><div class="val" id="stat-teams">—</div><div class="lbl">Teams</div></div>
   </div>
 
   <!-- Filters -->
   <div class="filters">
-    <label>Sort by
-      <select id="f-sort">
-        <option value="mrr">MRR vs FIFO (default)</option>
-        <option value="mean_byte_hr">Mean Byte Hit Rate</option>
-        <option value="mean_obj_hr">Mean Object Hit Rate</option>
-        <option value="submitted_at">Submission Time</option>
+    <label>Metric
+      <select id="f-metric">
+        <option value="mrr_byte">MRR (byte) over FIFO (%)</option>
+        <option value="mrr_obj">MRR (obj) over FIFO (%)</option>
+        <option value="byte_hit_rate">Byte Hit Rate</option>
+        <option value="obj_hit_rate">Object Hit Rate</option>
       </select>
     </label>
     <label>Filter trace
@@ -168,16 +168,9 @@
         {% for s in sizes %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
       </select>
     </label>
-    <label>Metric shown
-      <select id="f-metric">
-        <option value="byte_hit_rate">Byte Hit Rate</option>
-        <option value="obj_hit_rate">Object Hit Rate</option>
-      </select>
-    </label>
     <label>Search
       <input type="text" id="f-search" placeholder="name / group / heuristic"/>
     </label>
-    <button class="btn btn-primary" id="btn-apply">Apply</button>
     <button class="btn btn-secondary" id="btn-reset">Reset</button>
   </div>
 
@@ -188,11 +181,9 @@
         <tr>
           <th class="rank">#</th>
           <th>Heuristic</th>
-          <th>Submitter / Group</th>
+          <th>Submitter</th>
           <th>Type</th>
-          <th>MRR vs FIFO</th>
-          <th id="metric-col-header">Byte Hit Rate</th>
-          <th>Obj Hit Rate</th>
+          <th id="metric-col-header">MRR vs FIFO</th>
           <th>Submitted</th>
           <th></th>
         </tr>
@@ -217,14 +208,21 @@
 const TRACES = {{ traces | tojson }};
 const SIZES  = {{ sizes  | tojson }};
 let allRows = [];
+let currentFilters = { metric: "mrr_byte", trace: "", size: "" };
 
 async function fetchLeaderboard() {
-  const sort   = document.getElementById("f-sort").value;
+  const metric = document.getElementById("f-metric").value;
   const trace  = document.getElementById("f-trace").value;
   const size   = document.getElementById("f-size").value;
-  const metric = document.getElementById("f-metric").value;
 
-  let url = `/api/leaderboard?sort=${sort}&limit=200`;
+  currentFilters = { metric, trace, size };
+
+  // Sort by the selected metric
+  const sortBy = metric === "mrr_byte" ? "mrr" :
+                 metric === "mrr_obj" ? "mrr_obj" :
+                 metric === "byte_hit_rate" ? "mean_byte_hr" : "mean_obj_hr";
+
+  let url = `/api/leaderboard?sort=${sortBy}&limit=200`;
   if (trace) url += `&trace=${trace}`;
   if (size)  url += `&size=${size}`;
 
@@ -236,18 +234,25 @@ async function fetchLeaderboard() {
 
 function renderStats(rows) {
   document.getElementById("stat-count").textContent = rows.length;
-  const best_mrr  = Math.max(...rows.map(r => r.mrr  ?? 0)).toFixed(4);
+  const best_mrr  = Math.max(...rows.map(r => r.mrr  ?? 0));
   const best_byte = Math.max(...rows.map(r => r.mean_byte_hr ?? 0)).toFixed(4);
   const teams     = new Set(rows.map(r => r.group_name || r.submitter_name)).size;
-  document.getElementById("stat-best-mrr").textContent  = best_mrr > 0 ? best_mrr + "x" : "—";
+
+  // Show MRR as percentage improvement
+  const mrr_pct = best_mrr > 0 ? "+" + ((best_mrr - 1.0) * 100).toFixed(2) + "%" : "—";
+  document.getElementById("stat-best-mrr").textContent  = mrr_pct;
   document.getElementById("stat-best-byte").textContent = best_byte > 0 ? best_byte : "—";
   document.getElementById("stat-teams").textContent     = teams;
 }
 
 function renderTable(rows, metric) {
   metric = metric || document.getElementById("f-metric").value;
-  document.getElementById("metric-col-header").textContent =
-    metric === "byte_hit_rate" ? "Byte Hit Rate" : "Object Hit Rate";
+
+  // Update header based on metric
+  const headerText = metric === "mrr_byte" ? "MRR (byte) over FIFO (%)" :
+                     metric === "mrr_obj" ? "MRR (obj) over FIFO (%)" :
+                     metric === "byte_hit_rate" ? "Byte Hit Rate" : "Object Hit Rate";
+  document.getElementById("metric-col-header").textContent = headerText;
 
   const search = document.getElementById("f-search").value.toLowerCase();
   const filtered = search
@@ -257,13 +262,21 @@ function renderTable(rows, metric) {
         (r.group_name||"").toLowerCase().includes(search))
     : rows;
 
-  const maxByte = Math.max(...filtered.map(r => r.mean_byte_hr || 0)) || 1;
   const tbody = document.getElementById("lb-body");
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">No submissions yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">No submissions yet.</td></tr>`;
     return;
   }
+
+  // Get the metric value and max for bar chart
+  const getMetricVal = (r) => {
+    if (metric === "mrr_byte") return r.mrr;
+    if (metric === "mrr_obj") return r.mrr_obj;
+    if (metric === "byte_hit_rate") return r.mean_byte_hr;
+    return r.mean_obj_hr;
+  };
+  const maxVal = Math.max(...filtered.map(r => getMetricVal(r) || 0)) || 1;
 
   tbody.innerHTML = filtered.map((r, i) => {
     const rank  = i + 1;
@@ -272,21 +285,32 @@ function renderTable(rows, metric) {
     const typeTag = r.algo_type === "vulcanevolve"
       ? `<span class="tag tag-vulcan">vulcan</span>`
       : `<span class="tag tag-classical">classical</span>`;
-    const mrr = r.mrr != null ? r.mrr.toFixed(4) : "—";
-    const mrrClass = r.mrr != null ? (r.mrr >= 1 ? "mrr-hi" : "mrr-lo") : "";
-    const dispVal  = metric === "byte_hit_rate" ? r.mean_byte_hr : r.mean_obj_hr;
-    const pct = dispVal / maxByte * 100;
+
+    const dispVal = getMetricVal(r);
+    let valStr, valClass = "";
+
+    if ((metric === "mrr_byte" || metric === "mrr_obj") && dispVal != null) {
+      // Convert MRR to percentage improvement over FIFO
+      const pctImprovement = (dispVal - 1.0) * 100;
+      const sign = pctImprovement >= 0 ? "+" : "";
+      valStr = `${sign}${pctImprovement.toFixed(2)}%`;
+      valClass = pctImprovement >= 0 ? "mrr-hi" : "mrr-lo";
+    } else {
+      valStr = dispVal != null ? dispVal.toFixed(4) : "—";
+    }
+
+    const metricCell = valStr;
+
     const date = r.submitted_at ? r.submitted_at.substring(0,16).replace("T"," ") : "";
     const desc = r.description ? `<br><small style="color:var(--text2)">${esc(r.description)}</small>` : "";
+    const submitter = r.group_name ? `${esc(r.submitter_name)} <span style="color:var(--text2)">/ ${esc(r.group_name)}</span>` : esc(r.submitter_name);
 
     return `<tr>
       <td class="rank ${medal}">${rankStr}</td>
       <td><strong>${esc(r.heuristic_name)}</strong>${desc}</td>
-      <td>${esc(r.submitter_name)}${r.group_name ? ` <span style="color:var(--text2)">/ ${esc(r.group_name)}</span>` : ""}</td>
+      <td>${submitter}</td>
       <td>${typeTag}</td>
-      <td class="${mrrClass}">${mrr}${r.mrr != null ? "x" : ""}</td>
-      <td><div class="bar-cell"><div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>${dispVal != null ? dispVal.toFixed(4) : "—"}</div></td>
-      <td>${r.mean_obj_hr != null ? r.mean_obj_hr.toFixed(4) : "—"}</td>
+      <td class="${valClass}">${metricCell}</td>
       <td style="color:var(--text2);font-size:0.78rem">${date}</td>
       <td><button class="detail-btn" onclick="showDetail(${r.id})">details</button></td>
     </tr>`;
@@ -303,10 +327,25 @@ async function showDetail(id) {
   document.getElementById("modal-title").textContent = data.heuristic_name;
 
   const results = data.results || {};
-  const keys = Object.keys(results).sort();
+
+  // Filter scenarios based on current filters
+  let filteredResults = results;
+  if (currentFilters.trace || currentFilters.size) {
+    filteredResults = {};
+    for (const [key, value] of Object.entries(results)) {
+      const matchTrace = !currentFilters.trace || key.startsWith(currentFilters.trace);
+      const matchSize = !currentFilters.size || key.endsWith(currentFilters.size);
+      if (matchTrace && matchSize) {
+        filteredResults[key] = value;
+      }
+    }
+  }
+
+  const keys = Object.keys(filteredResults).sort();
+  const scenarioCount = keys.length;
 
   const scenCards = keys.map(k => {
-    const v = results[k];
+    const v = filteredResults[k];
     return `<div class="scenario-card">
       <div class="key">${k}</div>
       <div class="bhr">${(v.byte_hit_rate||0).toFixed(4)}</div>
@@ -314,16 +353,29 @@ async function showDetail(id) {
     </div>`;
   }).join("");
 
+  const filterNote = (currentFilters.trace || currentFilters.size)
+    ? `<p style="color:var(--text2);font-size:0.8rem;margin-bottom:0.5rem">Filtered: ${currentFilters.trace || "all traces"} / ${currentFilters.size || "all sizes"}</p>`
+    : "";
+
+  const mrrByteDisplay = data.mrr != null
+    ? ((data.mrr - 1.0) >= 0 ? "+" : "") + ((data.mrr - 1.0) * 100).toFixed(2) + "%"
+    : "—";
+  const mrrObjDisplay = data.mrr_obj != null
+    ? ((data.mrr_obj - 1.0) >= 0 ? "+" : "") + ((data.mrr_obj - 1.0) * 100).toFixed(2) + "%"
+    : "—";
+
   document.getElementById("modal-body").innerHTML = `
     <div class="meta-row">
       <div><span>Submitter: </span><strong>${esc(data.submitter_name)}</strong></div>
       <div><span>Group: </span><strong>${esc(data.group_name||"—")}</strong></div>
       <div><span>Type: </span><strong>${esc(data.algo_type)}</strong></div>
-      <div><span>MRR: </span><strong>${data.mrr != null ? data.mrr.toFixed(4)+"x" : "—"}</strong></div>
+      <div><span>MRR (byte): </span><strong>${mrrByteDisplay}</strong></div>
+      <div><span>MRR (obj): </span><strong>${mrrObjDisplay}</strong></div>
       <div><span>Submitted: </span><strong>${(data.submitted_at||"").substring(0,16).replace("T"," ")}</strong></div>
     </div>
     ${data.description ? `<p style="color:var(--text2);margin-bottom:1rem;font-size:0.85rem">${esc(data.description)}</p>` : ""}
-    <h3 style="font-size:0.85rem;color:var(--text2);margin-bottom:0.5rem">All 30 scenarios</h3>
+    ${filterNote}
+    <h3 style="font-size:0.85rem;color:var(--text2);margin-bottom:0.5rem">${scenarioCount} scenario${scenarioCount !== 1 ? 's' : ''}</h3>
     <div class="scenario-grid">${scenCards}</div>
   `;
   document.getElementById("modal-backdrop").classList.add("open");
@@ -336,19 +388,19 @@ document.getElementById("modal-backdrop").onclick = (e) => {
     document.getElementById("modal-backdrop").classList.remove("open");
 };
 
-document.getElementById("btn-apply").onclick = fetchLeaderboard;
+// Auto-apply filters when they change
+document.getElementById("f-metric").addEventListener("change", fetchLeaderboard);
+document.getElementById("f-trace").addEventListener("change", fetchLeaderboard);
+document.getElementById("f-size").addEventListener("change", fetchLeaderboard);
+document.getElementById("f-search").addEventListener("input", () => renderTable(allRows));
+
 document.getElementById("btn-reset").onclick = () => {
-  document.getElementById("f-sort").value   = "mrr";
+  document.getElementById("f-metric").value = "mrr_byte";
   document.getElementById("f-trace").value  = "";
   document.getElementById("f-size").value   = "";
-  document.getElementById("f-metric").value = "byte_hit_rate";
   document.getElementById("f-search").value = "";
   fetchLeaderboard();
 };
-document.getElementById("f-search").addEventListener("input", () =>
-  renderTable(allRows));
-document.getElementById("f-metric").addEventListener("change", () =>
-  renderTable(allRows));
 
 fetchLeaderboard();
 setInterval(fetchLeaderboard, 30000);
