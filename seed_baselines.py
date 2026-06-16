@@ -3,11 +3,11 @@
 POST baselines.ndjson to the leaderboard server via /api/submit.
 Run from anywhere after generating baselines.ndjson.
 
-    python3 seed_baselines.py [--server http://leaderboard.dwivedula.dev]
+    python3 seed_baselines.py [--server https://dashboard.dwivedula.dev]
 """
 import os, sys, json, argparse, urllib.request, urllib.error
 
-DEFAULT_SERVER = "http://leaderboard.dwivedula.dev"
+DEFAULT_SERVER = "https://dashboard.dwivedula.dev"
 
 SIZE_LABELS = {"0.01": "1pct", "0.03": "3pct", "0.1": "10pct"}
 
@@ -25,7 +25,8 @@ ALGO_DESCRIPTIONS = {
 def post(payload, server_url):
     data = json.dumps(payload).encode()
     req  = urllib.request.Request(f"{server_url}/api/submit", data=data,
-                                  headers={"Content-Type": "application/json"}, method="POST")
+                                  headers={"Content-Type": "application/json",
+                                           "User-Agent": "seed_baselines/1.0"}, method="POST")
     try:
         resp = json.loads(urllib.request.urlopen(req, timeout=60).read().decode())
         print(f"  {payload['metadata']['heuristic_name']:12s}  MRR: {resp['mrr']:.4f}x  id={resp['id']}")

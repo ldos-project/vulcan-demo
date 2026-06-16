@@ -16,7 +16,7 @@ Used LiteLLM version `1.88.1` with `python3.11` for the demo: `litellm --config 
   done
   ```
 
-2. `python3 seed_baselines.py --baselines /path/to/baselines.ndjson [--server http://leaderboard.dwivedula.dev]`
+2. `python3 seed_baselines.py --baselines /path/to/baselines.ndjson [--server https://dashboard.dwivedula.dev]`
 
 3. `python3 app.py`
 
