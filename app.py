@@ -12,7 +12,8 @@ Routes:
 import os, sys, json, sqlite3, math
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from flask import Flask, request, jsonify, render_template, g
+from flask import Flask, request, jsonify, render_template, g, session, redirect, url_for
+from functools import wraps
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(HERE, "leaderboard.db")
@@ -20,7 +21,11 @@ DB_PATH = os.path.join(HERE, "leaderboard.db")
 TRACES = ["w86", "w87", "w89", "w90", "w93", "w94", "w99", "w103", "w105", "w106"]
 SIZES  = ["1pct", "3pct", "10pct"]
 
+# Admin password - change this to your desired password
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme123")
+
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +159,19 @@ def convert_to_central(timestamp_str: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Admin authentication
+# ---------------------------------------------------------------------------
+
+def require_admin(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('admin_authenticated'):
+            return jsonify({"error": "unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# ---------------------------------------------------------------------------
 # API routes
 # ---------------------------------------------------------------------------
 
@@ -166,9 +184,32 @@ def api_submit():
     meta    = data.get("metadata", {})
     results = data.get("results",  {})
 
+    # Validate required fields
     for field in ("submitter_name", "heuristic_name"):
         if not meta.get(field):
             return jsonify({"error": f"missing metadata field: {field}"}), 422
+
+    # Validate description length (max 100 characters)
+    description = meta.get("description", "")
+    if len(description) > 100:
+        return jsonify({"error": "description must be 100 characters or less"}), 422
+
+    # Validate that exactly 30 scenarios are present (10 traces × 3 sizes)
+    expected_scenarios = {f"{trace}_{size}" for trace in TRACES for size in SIZES}
+    provided_scenarios = set(results.keys())
+
+    if len(provided_scenarios) != 30:
+        return jsonify({"error": f"must provide exactly 30 scenarios (10 traces × 3 sizes), got {len(provided_scenarios)}"}), 422
+
+    if provided_scenarios != expected_scenarios:
+        missing = expected_scenarios - provided_scenarios
+        extra = provided_scenarios - expected_scenarios
+        error_msg = []
+        if missing:
+            error_msg.append(f"missing scenarios: {sorted(missing)}")
+        if extra:
+            error_msg.append(f"unexpected scenarios: {sorted(extra)}")
+        return jsonify({"error": "; ".join(error_msg)}), 422
 
     mrr_byte       = compute_mrr(results, "byte_hit_rate")
     mrr_obj        = compute_mrr(results, "obj_hit_rate")
@@ -300,6 +341,263 @@ def dashboard():
         traces=TRACES,
         sizes=SIZES,
     )
+
+
+# ---------------------------------------------------------------------------
+# Admin routes
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "GET":
+        if session.get('admin_authenticated'):
+            return redirect(url_for('admin_dashboard'))
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Admin Login</title>
+            <style>
+                :root {
+                    --bg: #0f1117;
+                    --surface: #1a1d27;
+                    --border: #2e3248;
+                    --accent: #6c63ff;
+                    --text: #e2e4f0;
+                    --text2: #8b8fa8;
+                    --danger: #ff6b6b;
+                }
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body {
+                    background: var(--bg);
+                    color: var(--text);
+                    font-family: 'Segoe UI', system-ui, sans-serif;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                }
+                .login-box {
+                    background: var(--surface);
+                    border: 1px solid var(--border);
+                    border-radius: 10px;
+                    padding: 2rem;
+                    width: 100%;
+                    max-width: 400px;
+                }
+                h1 { font-size: 1.4rem; margin-bottom: 1.5rem; color: var(--accent); text-align: center; }
+                .form-group { margin-bottom: 1rem; }
+                .form-group label { display: block; margin-bottom: 4px; font-size: 0.85rem; color: var(--text2); }
+                .form-group input {
+                    width: 100%;
+                    background: var(--bg);
+                    color: var(--text);
+                    border: 1px solid var(--border);
+                    border-radius: 5px;
+                    padding: 10px;
+                    font-size: 0.9rem;
+                }
+                .form-group input:focus { outline: 2px solid var(--accent); }
+                .btn {
+                    width: 100%;
+                    padding: 10px;
+                    border-radius: 5px;
+                    border: none;
+                    background: var(--accent);
+                    color: #fff;
+                    font-size: 0.9rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    margin-top: 0.5rem;
+                }
+                .btn:hover { filter: brightness(1.15); }
+                .error {
+                    background: rgba(255, 107, 107, 0.15);
+                    border: 1px solid var(--danger);
+                    color: var(--danger);
+                    padding: 10px;
+                    border-radius: 5px;
+                    margin-bottom: 1rem;
+                    font-size: 0.85rem;
+                    text-align: center;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="login-box">
+                <h1>🔒 Admin Login</h1>
+                <form method="POST">
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" name="password" required autofocus/>
+                    </div>
+                    <button type="submit" class="btn">Login</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        '''
+
+    # POST request - validate password
+    password = request.form.get('password', '')
+    if password == ADMIN_PASSWORD:
+        session['admin_authenticated'] = True
+        return redirect(url_for('admin_dashboard'))
+
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Admin Login</title>
+        <style>
+            :root {
+                --bg: #0f1117;
+                --surface: #1a1d27;
+                --border: #2e3248;
+                --accent: #6c63ff;
+                --text: #e2e4f0;
+                --text2: #8b8fa8;
+                --danger: #ff6b6b;
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body {
+                background: var(--bg);
+                color: var(--text);
+                font-family: 'Segoe UI', system-ui, sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+            }
+            .login-box {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 2rem;
+                width: 100%;
+                max-width: 400px;
+            }
+            h1 { font-size: 1.4rem; margin-bottom: 1.5rem; color: var(--accent); text-align: center; }
+            .form-group { margin-bottom: 1rem; }
+            .form-group label { display: block; margin-bottom: 4px; font-size: 0.85rem; color: var(--text2); }
+            .form-group input {
+                width: 100%;
+                background: var(--bg);
+                color: var(--text);
+                border: 1px solid var(--border);
+                border-radius: 5px;
+                padding: 10px;
+                font-size: 0.9rem;
+            }
+            .form-group input:focus { outline: 2px solid var(--accent); }
+            .btn {
+                width: 100%;
+                padding: 10px;
+                border-radius: 5px;
+                border: none;
+                background: var(--accent);
+                color: #fff;
+                font-size: 0.9rem;
+                font-weight: 600;
+                cursor: pointer;
+                margin-top: 0.5rem;
+            }
+            .btn:hover { filter: brightness(1.15); }
+            .error {
+                background: rgba(255, 107, 107, 0.15);
+                border: 1px solid var(--danger);
+                color: var(--danger);
+                padding: 10px;
+                border-radius: 5px;
+                margin-bottom: 1rem;
+                font-size: 0.85rem;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-box">
+            <h1>🔒 Admin Login</h1>
+            <div class="error">Invalid password</div>
+            <form method="POST">
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" name="password" required autofocus/>
+                </div>
+                <button type="submit" class="btn">Login</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    '''
+
+
+@app.get("/admin")
+@require_admin
+def admin_dashboard():
+    return render_template("admin.html")
+
+
+@app.post("/api/admin/logout")
+def admin_logout():
+    session.pop('admin_authenticated', None)
+    return jsonify({"success": True})
+
+
+@app.put("/api/admin/submission/<int:sub_id>")
+@require_admin
+def admin_update_submission(sub_id: int):
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "no JSON body"}), 400
+
+    db = get_db()
+
+    # Check if submission exists
+    existing = db.execute("SELECT id FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    if not existing:
+        return jsonify({"error": "submission not found"}), 404
+
+    # Update the submission
+    db.execute(
+        """UPDATE submissions SET
+           submitter_name = ?,
+           group_name = ?,
+           heuristic_name = ?,
+           description = ?,
+           algo_type = ?
+           WHERE id = ?""",
+        (
+            data.get("submitter_name", ""),
+            data.get("group_name", ""),
+            data.get("heuristic_name", ""),
+            data.get("description", ""),
+            data.get("algo_type", "vulcanevolve"),
+            sub_id,
+        )
+    )
+    db.commit()
+
+    return jsonify({"success": True, "id": sub_id})
+
+
+@app.delete("/api/admin/submissions")
+@require_admin
+def admin_delete_submissions():
+    data = request.get_json(force=True)
+    if not data or "ids" not in data:
+        return jsonify({"error": "missing 'ids' field"}), 400
+
+    ids = data["ids"]
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "ids must be a non-empty list"}), 400
+
+    db = get_db()
+    placeholders = ",".join("?" * len(ids))
+    db.execute(f"DELETE FROM submissions WHERE id IN ({placeholders})", ids)
+    db.commit()
+
+    return jsonify({"success": True, "deleted": len(ids)})
 
 
 # ---------------------------------------------------------------------------

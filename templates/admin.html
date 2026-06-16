@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard - PolicySmith Leaderboard</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #232638;
+      --border: #2e3248;
+      --accent: #6c63ff;
+      --accent2: #48c774;
+      --text: #e2e4f0;
+      --text2: #8b8fa8;
+      --danger: #ff6b6b;
+      --warning: #ffa726;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 1.2rem 2rem;
+      display: flex; align-items: center; gap: 1rem; justify-content: space-between;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; color: var(--danger); }
+    header .badge { background: var(--danger); color: #fff; border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; font-weight: 600; }
+    .logout-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 0.85rem; }
+    .logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+    main { max-width: 1300px; margin: 0 auto; padding: 1.5rem; }
+
+    .action-bar {
+      display: flex; gap: 1rem; margin-bottom: 1.25rem; align-items: center;
+    }
+    .btn {
+      padding: 7px 18px; border-radius: 5px; border: none; cursor: pointer;
+      font-size: 0.85rem; font-weight: 600; transition: all 0.2s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { filter: brightness(1.15); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { filter: brightness(1.15); }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+    .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 2rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    thead tr { background: var(--surface2); }
+    thead th {
+      text-align: left; padding: 10px 12px; color: var(--text2); font-weight: 600;
+      white-space: nowrap; position: sticky; top: 0; background: var(--surface2);
+    }
+    tbody tr { border-top: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody tr.selected { background: rgba(255, 107, 107, 0.1); }
+    td { padding: 9px 12px; vertical-align: middle; }
+
+    .actions-cell { display: flex; gap: 6px; }
+    .edit-btn, .delete-btn {
+      padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border);
+      font-size: 0.75rem; cursor: pointer; transition: all 0.2s;
+    }
+    .edit-btn { background: var(--accent); color: #fff; border: none; }
+    .edit-btn:hover { filter: brightness(1.15); }
+    .delete-btn { background: none; color: var(--danger); }
+    .delete-btn:hover { background: var(--danger); color: #fff; }
+
+    .checkbox { width: 18px; height: 18px; cursor: pointer; }
+
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.5rem; width: 90%; max-width: 600px;
+      max-height: 85vh; overflow-y: auto;
+    }
+    .modal h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--accent); }
+    .modal-close { float: right; background: none; border: none; color: var(--text2); font-size: 1.3rem; cursor: pointer; }
+
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; margin-bottom: 4px; font-size: 0.85rem; color: var(--text2); }
+    .form-group input, .form-group textarea {
+      width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 5px; padding: 8px 10px; font-size: 0.85rem; font-family: inherit;
+    }
+    .form-group textarea { resize: vertical; min-height: 80px; }
+    .form-group input:focus, .form-group textarea:focus { outline: 2px solid var(--accent); }
+
+    .alert {
+      padding: 10px 14px; border-radius: 5px; margin-bottom: 1rem; font-size: 0.85rem;
+    }
+    .alert-success { background: rgba(72, 199, 116, 0.15); border: 1px solid var(--accent2); color: var(--accent2); }
+    .alert-error { background: rgba(255, 107, 107, 0.15); border: 1px solid var(--danger); color: var(--danger); }
+    .alert-warning { background: rgba(255, 167, 38, 0.15); border: 1px solid var(--warning); color: var(--warning); }
+
+    .loading { text-align: center; padding: 3rem; color: var(--text2); }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Admin Dashboard <span class="badge">RESTRICTED</span></h1>
+  </div>
+  <button class="logout-btn" onclick="logout()">Logout</button>
+</header>
+
+<main>
+  <div id="alert-container"></div>
+
+  <div class="action-bar">
+    <button class="btn btn-danger" id="delete-selected-btn" onclick="deleteSelected()" disabled>
+      Delete Selected (<span id="selected-count">0</span>)
+    </button>
+    <button class="btn btn-secondary" onclick="window.location.href='/'">View Public Dashboard</button>
+  </div>
+
+  <div class="table-wrap">
+    <table id="admin-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" class="checkbox" id="select-all" onchange="toggleSelectAll()"/></th>
+          <th>ID</th>
+          <th>Heuristic</th>
+          <th>Submitter</th>
+          <th>Group</th>
+          <th>Type</th>
+          <th>MRR (byte)</th>
+          <th>Submitted</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="admin-body">
+        <tr><td colspan="9" class="loading">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<!-- Edit Modal -->
+<div class="modal-backdrop" id="edit-modal-backdrop">
+  <div class="modal">
+    <button class="modal-close" onclick="closeEditModal()">&times;</button>
+    <h2>Edit Submission</h2>
+    <form id="edit-form">
+      <input type="hidden" id="edit-id"/>
+      <div class="form-group">
+        <label>Submitter Name *</label>
+        <input type="text" id="edit-submitter" required/>
+      </div>
+      <div class="form-group">
+        <label>Group Name</label>
+        <input type="text" id="edit-group"/>
+      </div>
+      <div class="form-group">
+        <label>Heuristic Name *</label>
+        <input type="text" id="edit-heuristic" required/>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="edit-description"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Algorithm Type</label>
+        <input type="text" id="edit-algotype"/>
+      </div>
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-backdrop" id="delete-modal-backdrop">
+  <div class="modal">
+    <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+    <h2 style="color: var(--danger);">Confirm Deletion</h2>
+    <p style="margin-bottom: 1.5rem; color: var(--text2);" id="delete-message">
+      Are you sure you want to delete this submission? This action cannot be undone.
+    </p>
+    <div style="display: flex; gap: 1rem;">
+      <button class="btn btn-danger" onclick="confirmDelete()">Yes, Delete</button>
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allSubmissions = [];
+let selectedIds = new Set();
+let deleteTargetIds = [];
+
+async function fetchSubmissions() {
+  try {
+    const resp = await fetch('/api/leaderboard?limit=500&sort=submitted_at');
+    if (!resp.ok) throw new Error('Failed to fetch');
+    allSubmissions = await resp.json();
+    renderTable();
+  } catch (err) {
+    showAlert('Failed to load submissions: ' + err.message, 'error');
+  }
+}
+
+function renderTable() {
+  const tbody = document.getElementById('admin-body');
+
+  if (!allSubmissions.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="loading">No submissions found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = allSubmissions.map(s => {
+    const checked = selectedIds.has(s.id) ? 'checked' : '';
+    const rowClass = selectedIds.has(s.id) ? 'selected' : '';
+    const date = s.submitted_at ? s.submitted_at.substring(0,16).replace('T',' ') : '';
+    const mrrDisplay = s.mrr != null
+      ? ((s.mrr - 1.0) >= 0 ? '+' : '') + ((s.mrr - 1.0) * 100).toFixed(2) + '%'
+      : '—';
+
+    return `<tr class="${rowClass}">
+      <td><input type="checkbox" class="checkbox row-checkbox" data-id="${s.id}" ${checked} onchange="toggleSelect(${s.id})"/></td>
+      <td>${s.id}</td>
+      <td><strong>${esc(s.heuristic_name)}</strong></td>
+      <td>${esc(s.submitter_name)}</td>
+      <td>${esc(s.group_name || '—')}</td>
+      <td>${esc(s.algo_type)}</td>
+      <td>${mrrDisplay}</td>
+      <td style="color:var(--text2);font-size:0.78rem">${date}</td>
+      <td class="actions-cell">
+        <button class="edit-btn" onclick="editSubmission(${s.id})">Edit</button>
+        <button class="delete-btn" onclick="deleteOne(${s.id})">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  updateSelectedCount();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleSelectAll() {
+  const checked = document.getElementById('select-all').checked;
+  if (checked) {
+    allSubmissions.forEach(s => selectedIds.add(s.id));
+  } else {
+    selectedIds.clear();
+  }
+  renderTable();
+}
+
+function toggleSelect(id) {
+  if (selectedIds.has(id)) {
+    selectedIds.delete(id);
+  } else {
+    selectedIds.add(id);
+  }
+  updateSelectedCount();
+
+  // Update row class
+  const row = event.target.closest('tr');
+  if (selectedIds.has(id)) {
+    row.classList.add('selected');
+  } else {
+    row.classList.remove('selected');
+  }
+
+  // Update select-all checkbox
+  document.getElementById('select-all').checked = selectedIds.size === allSubmissions.length;
+}
+
+function updateSelectedCount() {
+  document.getElementById('selected-count').textContent = selectedIds.size;
+  document.getElementById('delete-selected-btn').disabled = selectedIds.size === 0;
+}
+
+function editSubmission(id) {
+  const submission = allSubmissions.find(s => s.id === id);
+  if (!submission) return;
+
+  document.getElementById('edit-id').value = submission.id;
+  document.getElementById('edit-submitter').value = submission.submitter_name;
+  document.getElementById('edit-group').value = submission.group_name || '';
+  document.getElementById('edit-heuristic').value = submission.heuristic_name;
+  document.getElementById('edit-description').value = submission.description || '';
+  document.getElementById('edit-algotype').value = submission.algo_type || 'vulcanevolve';
+
+  document.getElementById('edit-modal-backdrop').classList.add('open');
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal-backdrop').classList.remove('open');
+}
+
+document.getElementById('edit-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const id = document.getElementById('edit-id').value;
+  const data = {
+    submitter_name: document.getElementById('edit-submitter').value,
+    group_name: document.getElementById('edit-group').value,
+    heuristic_name: document.getElementById('edit-heuristic').value,
+    description: document.getElementById('edit-description').value,
+    algo_type: document.getElementById('edit-algotype').value,
+  };
+
+  try {
+    const resp = await fetch(`/api/admin/submission/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
+    if (!resp.ok) throw new Error('Failed to update submission');
+
+    showAlert('Submission updated successfully!', 'success');
+    closeEditModal();
+    await fetchSubmissions();
+  } catch (err) {
+    showAlert('Error updating submission: ' + err.message, 'error');
+  }
+});
+
+function deleteOne(id) {
+  deleteTargetIds = [id];
+  document.getElementById('delete-message').textContent =
+    'Are you sure you want to delete this submission? This action cannot be undone.';
+  document.getElementById('delete-modal-backdrop').classList.add('open');
+}
+
+function deleteSelected() {
+  if (selectedIds.size === 0) return;
+  deleteTargetIds = Array.from(selectedIds);
+  document.getElementById('delete-message').textContent =
+    `Are you sure you want to delete ${selectedIds.size} submission(s)? This action cannot be undone.`;
+  document.getElementById('delete-modal-backdrop').classList.add('open');
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-modal-backdrop').classList.remove('open');
+  deleteTargetIds = [];
+}
+
+async function confirmDelete() {
+  if (deleteTargetIds.length === 0) return;
+
+  try {
+    const resp = await fetch('/api/admin/submissions', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: deleteTargetIds }),
+    });
+
+    if (!resp.ok) throw new Error('Failed to delete submissions');
+
+    showAlert(`Successfully deleted ${deleteTargetIds.length} submission(s)!`, 'success');
+    selectedIds.clear();
+    closeDeleteModal();
+    await fetchSubmissions();
+  } catch (err) {
+    showAlert('Error deleting submissions: ' + err.message, 'error');
+  }
+}
+
+function showAlert(message, type) {
+  const container = document.getElementById('alert-container');
+  const alertClass = type === 'success' ? 'alert-success' : type === 'warning' ? 'alert-warning' : 'alert-error';
+  const alertDiv = document.createElement('div');
+  alertDiv.className = `alert ${alertClass}`;
+  alertDiv.textContent = message;
+  container.appendChild(alertDiv);
+
+  setTimeout(() => alertDiv.remove(), 5000);
+}
+
+function logout() {
+  fetch('/api/admin/logout', { method: 'POST' })
+    .then(() => window.location.href = '/');
+}
+
+fetchSubmissions();
+</script>
+</body>
+</html>
