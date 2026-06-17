@@ -5,7 +5,7 @@ Leaderboard Flask app.
 Routes:
   GET  /                    → dashboard (filterable)
   GET  /api/leaderboard     → JSON list of all submissions
-  POST /api/submit          → accept evaluation results
+  POST /api/submit          → accept evaluation results (requires source_code for Vulcan heuristics)
   GET  /api/submission/<id> → full detail for one submission
 """
 
@@ -22,10 +22,10 @@ TRACES = ["w86", "w87", "w89", "w90", "w93", "w94", "w99", "w103", "w105", "w106
 SIZES  = ["1pct", "3pct", "10pct"]
 
 # Admin password - change this to your desired password
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme123")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "bethechange99$")
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production-hello-help-78273827982r3yfighjgzdz")
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +58,7 @@ def init_db():
             algo_type       TEXT DEFAULT 'vulcanevolve',
             submitted_at    TEXT NOT NULL,
             results_json    TEXT NOT NULL,
+            source_code     TEXT,
             mrr             REAL,
             mrr_obj         REAL,
             mean_obj_hr     REAL,
@@ -67,6 +68,12 @@ def init_db():
     # Add mrr_obj column if it doesn't exist (migration)
     try:
         db.execute("ALTER TABLE submissions ADD COLUMN mrr_obj REAL")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    # Add source_code column if it doesn't exist (migration)
+    try:
+        db.execute("ALTER TABLE submissions ADD COLUMN source_code TEXT")
         db.commit()
     except sqlite3.OperationalError:
         pass  # Column already exists
@@ -183,11 +190,18 @@ def api_submit():
 
     meta    = data.get("metadata", {})
     results = data.get("results",  {})
+    source_code = data.get("source_code", "")
 
     # Validate required fields
     for field in ("submitter_name", "heuristic_name"):
         if not meta.get(field):
             return jsonify({"error": f"missing metadata field: {field}"}), 422
+
+    # Validate source_code for Vulcan heuristics (required)
+    algo_type = meta.get("algo_type", "vulcanevolve")
+    if algo_type == "vulcanevolve":
+        if not source_code or not source_code.strip():
+            return jsonify({"error": "source_code is required for Vulcan heuristics"}), 422
 
     # Validate description length (max 100 characters)
     description = meta.get("description", "")
@@ -222,16 +236,17 @@ def api_submit():
     cur = db.execute(
         """INSERT INTO submissions
            (submitter_name, group_name, heuristic_name, description,
-            algo_type, submitted_at, results_json, mrr, mrr_obj, mean_obj_hr, mean_byte_hr)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            algo_type, submitted_at, results_json, source_code, mrr, mrr_obj, mean_obj_hr, mean_byte_hr)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             meta.get("submitter_name"),
             meta.get("group_name", ""),
             meta.get("heuristic_name"),
             meta.get("description", ""),
-            meta.get("algo_type", "vulcanevolve"),
+            algo_type,
             submitted_at,
             json.dumps(results),
+            source_code,
             mrr_byte,
             mrr_obj,
             mean_obj,
@@ -565,7 +580,8 @@ def admin_update_submission(sub_id: int):
            group_name = ?,
            heuristic_name = ?,
            description = ?,
-           algo_type = ?
+           algo_type = ?,
+           source_code = ?
            WHERE id = ?""",
         (
             data.get("submitter_name", ""),
@@ -573,6 +589,7 @@ def admin_update_submission(sub_id: int):
             data.get("heuristic_name", ""),
             data.get("description", ""),
             data.get("algo_type", "vulcanevolve"),
+            data.get("source_code", ""),
             sub_id,
         )
     )

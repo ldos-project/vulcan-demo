@@ -364,6 +364,13 @@ async function showDetail(id) {
     ? ((data.mrr_obj - 1.0) >= 0 ? "+" : "") + ((data.mrr_obj - 1.0) * 100).toFixed(2) + "%"
     : "—";
 
+  const sourceCodeSection = data.source_code && data.source_code.trim()
+    ? `<div style="margin-top:1.5rem">
+         <h3 style="font-size:0.9rem;color:var(--text2);margin-bottom:0.5rem">Source Code</h3>
+         <pre style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;overflow-x:auto;font-size:0.8rem;line-height:1.5;color:var(--text);max-height:400px"><code>${esc(data.source_code)}</code></pre>
+       </div>`
+    : "";
+
   document.getElementById("modal-body").innerHTML = `
     <div class="meta-row">
       <div><span>Submitter: </span><strong>${esc(data.submitter_name)}</strong></div>
@@ -377,6 +384,7 @@ async function showDetail(id) {
     ${filterNote}
     <h3 style="font-size:0.85rem;color:var(--text2);margin-bottom:0.5rem">${scenarioCount} scenario${scenarioCount !== 1 ? 's' : ''}</h3>
     <div class="scenario-grid">${scenCards}</div>
+    ${sourceCodeSection}
   `;
   document.getElementById("modal-backdrop").classList.add("open");
 }
